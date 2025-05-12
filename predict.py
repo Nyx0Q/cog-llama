@@ -10,6 +10,7 @@ from config import DEFAULT_MODEL_NAME, load_tokenizer, load_tensorizer, pull_gcp
 from subclass import YieldingLlama
 from peft import PeftModel
 import os
+from llama_cpp import Llama
 
 
 class Predictor(BasePredictor):
@@ -31,6 +32,14 @@ class Predictor(BasePredictor):
                 self.model = self.load_huggingface_model(weights=weights)
 
         self.tokenizer = load_tokenizer()
+
+    from llama_cpp import Llama
+
+    def load_gguf_model(self, weights):
+        print(f"Loading GGUF model from {weights}")
+        model = Llama(model_path=weights)
+        return model
+
 
     def load_peft(self, weights):
         st = time.time()
