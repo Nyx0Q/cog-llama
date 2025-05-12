@@ -11,7 +11,8 @@ from tensorizer.utils import no_init_or_tensor
 
 from subclass import YieldingLlama
 
-DEFAULT_MODEL_NAME = "llama_weights/llama-7b"  # path from which we pull weights when there's no COG_WEIGHTS environment variable
+//DEFAULT_MODEL_NAME = "llama_weights/llama-7b"  # path from which we pull weights when there's no COG_WEIGHTS environment variable
+DEFAULT_MODEL_NAME = "https://huggingface.co/Shamsa12/SLM1.5/resolve/main/SLMTelco.gguf"
 TOKENIZER_NAME = "llama_weights/tokenizer"
 CONFIG_LOCATION = "llama_weights/llama-7b"
 
