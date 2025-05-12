@@ -33,8 +33,6 @@ class Predictor(BasePredictor):
 
         self.tokenizer = load_tokenizer()
 
-    from llama_cpp import Llama
-
     def load_gguf_model(self, weights):
         print(f"Loading GGUF model from {weights}")
         model = Llama(model_path=weights)
