@@ -153,9 +153,20 @@ class EightBitPredictor(Predictor):
     """subclass s.t. we can configure whether a model is loaded in 8bit mode from cog.yaml"""
 
     def setup(self, weights: Optional[Path] = None):
-        if weights is not None and weights.name == "weights":
-            # bugfix
-            weights = None
+        # if weights is not None and weights.name == "weights":
+        #     # bugfix
+        #     weights = None
+        if weights is None:
+            weights = DEFAULT_MODEL_NAME
+        if weights.endswith(".gguf"):
+            self.model = self.load_gguf_model(weights)
+        elif '.zip' in weights:
+            self.model = self.load_peft(weights)
+        elif "tensors" in weights:
+            self.model = load_tensorizer(weights, plaid_mode=True, cls=YieldingLlama)
+        else:
+            self.model = self.load_huggingface_model(weights=weights)
+
         # TODO: fine-tuned 8bit weights.
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = YieldingLlama.from_pretrained(
