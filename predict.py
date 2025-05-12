@@ -179,4 +179,3 @@ class EightBitPredictor(Predictor):
         self.model = YieldingLlama.from_pretrained(
             DEFAULT_MODEL_NAME, load_in_8bit=True, device_map="auto"
         )
-        self.tokenizer = load_tokenizer()
