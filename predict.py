@@ -6,38 +6,37 @@ import zipfile
 import torch
 from cog import BasePredictor, ConcatenateIterator, Input, Path
 
-from config import DEFAULT_MODEL_NAME, load_tokenizer, load_tensorizer, pull_gcp_file
+from config import DEFAULT_MODEL_NAME, pull_gcp_file
 from subclass import YieldingLlama
 from peft import PeftModel
 import os
-from llama_cpp import Llama
+from llama_cpp import Llama  # This is the key import for GGUF model
 
 
 class Predictor(BasePredictor):
     def setup(self, weights: Optional[Path] = None):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if weights is not None and weights.name == "weights":
-            # bugfix
-            weights = None
-
+        
         if weights is None:
-            self.model = load_tensorizer(weights=DEFAULT_MODEL_NAME, plaid_mode=True, cls=YieldingLlama)
+            weights = DEFAULT_MODEL_NAME
+        
+        # Load GGUF model
+        if weights.endswith(".gguf"):
+            self.model = self.load_gguf_model(weights)
+        elif '.zip' in weights:
+            self.model = self.load_peft(weights)
+        elif "tensors" in weights:
+            self.model = load_tensorizer(weights, plaid_mode=True, cls=YieldingLlama)
         else:
-            weights = str(weights)
-            if '.zip' in weights:
-                self.model = self.load_peft(weights)
-            elif "tensors" in weights:
-                self.model = load_tensorizer(weights, plaid_mode=True, cls=YieldingLlama)
-            else:
-                self.model = self.load_huggingface_model(weights=weights)
+            self.model = self.load_huggingface_model(weights=weights)
 
-        self.tokenizer = load_tokenizer()
+        # We no longer use the `load_tokenizer()` here
+        self.tokenizer = self.model.tokenizer  # Using the tokenizer from the GGUF model
 
     def load_gguf_model(self, weights):
         print(f"Loading GGUF model from {weights}")
         model = Llama(model_path=weights)
         return model
-
 
     def load_peft(self, weights):
         st = time.time()
@@ -45,7 +44,7 @@ class Predictor(BasePredictor):
             model = load_tensorizer(DEFAULT_MODEL_NAME, plaid_mode=False, cls=YieldingLlama)
         else:
             model = self.load_huggingface_model(DEFAULT_MODEL_NAME)
-        if 'https' in weights: # weights are in the cloud
+        if 'https' in weights:  # weights are in the cloud
             local_weights = 'local_weights.zip'
             pull_gcp_file(weights, local_weights)
             weights = local_weights
@@ -55,7 +54,7 @@ class Predictor(BasePredictor):
         with zipfile.ZipFile(weights, 'r') as zip_ref:
             zip_ref.extractall(out)
         model = PeftModel.from_pretrained(model, out)
-        print(f"peft model loaded in {time.time() - st}")
+        print(f"PEFT model loaded in {time.time() - st}")
         return model.to('cuda')
 
     def load_huggingface_model(self, weights=None):
@@ -113,28 +112,20 @@ class Predictor(BasePredictor):
             ):
                 cur_id = output.item()
 
-                # in order to properly handle spaces, we need to do our own tokenizing. Fun!
-                # we're building up a buffer of sub-word / punctuation tokens until we hit a space, and then yielding whole words + punctuation.
                 cur_token = self.tokenizer.convert_ids_to_tokens(cur_id)
 
-                # skip initial newline, which this almost always yields. hack - newline id = 13.
                 if not first_token_yielded and not prev_ids and cur_id == 13:
                     continue
 
-                # underscore means a space, means we yield previous tokens
-                if cur_token.startswith("▁"):  # this is not a standard underscore.
-                    # first token
+                if cur_token.startswith("▁"):  # special space handling
                     if not prev_ids:
                         prev_ids = [cur_id]
                         continue
-
-                    # there are tokens to yield
                     else:
                         token = self.tokenizer.decode(prev_ids)
                         prev_ids = [cur_id]
 
                         if not first_token_yielded:
-                            # no leading space for first token
                             token = token.strip()
                             first_token_yielded = True
                         yield token
@@ -142,10 +133,8 @@ class Predictor(BasePredictor):
                     prev_ids.append(cur_id)
                     continue
 
-            # remove any special tokens such as </s>
             token = self.tokenizer.decode(prev_ids, skip_special_tokens=True)
             if not first_token_yielded:
-                # no leading space for first token
                 token = token.strip()
                 first_token_yielded = True
             yield token
@@ -157,12 +146,9 @@ class Predictor(BasePredictor):
 
 
 class EightBitPredictor(Predictor):
-    """subclass s.t. we can configure whether a model is loaded in 8bit mode from cog.yaml"""
+    """Subclass to configure whether the model is loaded in 8-bit mode from cog.yaml"""
 
     def setup(self, weights: Optional[Path] = None):
-        # if weights is not None and weights.name == "weights":
-        #     # bugfix
-        #     weights = None
         if weights is None:
             weights = DEFAULT_MODEL_NAME
         if weights.endswith(".gguf"):
@@ -174,7 +160,6 @@ class EightBitPredictor(Predictor):
         else:
             self.model = self.load_huggingface_model(weights=weights)
 
-        # TODO: fine-tuned 8bit weights.
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = YieldingLlama.from_pretrained(
             DEFAULT_MODEL_NAME, load_in_8bit=True, device_map="auto"
